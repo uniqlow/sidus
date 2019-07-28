@@ -690,6 +690,7 @@ main(int argc, char** argv)
 
 	if (!inputfile) {
 		std::fprintf(stderr, "sidus: no input file\n");
+		usage(stderr);
 		return -1;
 	}
 
