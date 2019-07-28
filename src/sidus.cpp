@@ -44,7 +44,7 @@ struct Header {
 		TYCHO_STAR_ID,
 		INTEGER_STAR_ID
 	} starId;
-	int starNameLen;
+	int starNameLength;
 	enum ProperMotion {
 		NO_PROPER_MOTION,
 		PROPER_MOTION,
@@ -268,7 +268,7 @@ parseHeader(
 
 	header->numStars = std::abs(starn);
 	header->starId = stnum < 0 ? Header::NO_STAR_ID : (Header::StarId)stnum;
-	header->starNameLen = stnum < 0 ? -stnum : 0;
+	header->starNameLength = stnum < 0 ? -stnum : 0;
 	header->properMotion = (Header::ProperMotion)mprop;
 	header->numMagnitudes = std::abs(nmag);
 	header->numBytesPerStar = nbent;
@@ -331,11 +331,11 @@ parseStar(
 		parse(&svel, data + cursor, littleEndian);
 		cursor += 8;
 	}
-	char starname[header.starNameLen + 1];
-	if (header.starNameLen > 0) {
-		std::strncpy(starname, (char const*)(data + cursor), header.starNameLen);
+	char starname[header.starNameLength + 1];
+	if (header.starNameLength > 0) {
+		std::strncpy(starname, (char const*)(data + cursor), header.starNameLength);
 	}
-	starname[header.starNameLen] = '\0';
+	starname[header.starNameLength] = '\0';
 
 	star->name = starname;
 	star->rightAscension = ra;
@@ -674,6 +674,9 @@ main(int argc, char** argv)
 		return -1;
 	}
 	header.apparentMagnitude = std::min(header.numMagnitudes - 1, header.numMagnitudes);
+	if (header.starNameLength == 0) {
+		usename = false;
+	}
 
 	if (onlymeta) {
 		fprintf(stdout,
@@ -692,7 +695,7 @@ main(int argc, char** argv)
 				"GSC star id" : header.starId == Header::TYCHO_STAR_ID ?
 				"Tycho star id" : header.starId == Header::INTEGER_STAR_ID ?
 				"Integer star id" : "UNKNOWN",
-			header.starNameLen > 0 ? "Yes" : "No",
+			header.starNameLength > 0 ? "Yes" : "No",
 			header.properMotion == Header::NO_PROPER_MOTION ?
 				"No" : header.properMotion == Header::PROPER_MOTION ?
 				"Yes" : header.properMotion == Header::RADIAL_VELOCITY ?
