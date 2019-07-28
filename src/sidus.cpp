@@ -33,7 +33,8 @@
 
 namespace {
 
-enum class Epoch { DONT_CARE, J2000, B1950 };
+enum class Epoch { AUTO, J2000, B1950 };
+enum class Endian { AUTO, LITTLE, BIG };
 
 struct Header {
 	int numStars;
@@ -54,6 +55,7 @@ struct Header {
 	int apparentMagnitude;
 	int numBytesPerStar;
 	Epoch epoch;
+	bool littleEndian;
 };
 
 struct Star {
@@ -78,10 +80,11 @@ usage(FILE * f)
 	std::fprintf(f, "Options:\n");
 	std::fprintf(f, " -a<0-9>	specify apparent magnitude, if multiple exist\n");
 	std::fprintf(f, " -f<0-9>	filter magnitudes weaker than specified\n");
-	std::fprintf(f, " -b		expect B1950 epoch\n");
-	std::fprintf(f, " -j		expect J2000 epoch\n");
+	std::fprintf(f, " -B1950		expect B1950 epoch\n");
+	std::fprintf(f, " -J2000		expect J2000 epoch\n");
 	std::fprintf(f, " -c		output a C header instead of a CSV text\n");
-	std::fprintf(f, " -e		expect BigEndian format instead of LittleEndian\n");
+	std::fprintf(f, " -le		expect little-endian format (default)\n");
+	std::fprintf(f, " -be		expect big-endian format\n");
 	std::fprintf(f, " -s		output single-precision floating point\n");
 	std::fprintf(f, " -i		output only information from catalog header\n");
 	std::fprintf(f, " -m		sort output by decreasing magnitude\n");
@@ -243,16 +246,46 @@ parseHeader(
     Header* header,
     unsigned char const* const data,
     Epoch const epoch,
-    bool const littleEndian)
+    Endian endian)
 {
+	std::int32_t nmag;
+	if (endian == Endian::AUTO) {
+		parse(&nmag, data + 0 + 4 + 4 + 4 + 4 + 4, true);
+		if (std::abs(nmag) > 10) {
+			parse(&nmag, data + 0 + 4 + 4 + 4 + 4 + 4, false);
+			if (std::abs(nmag) > 10) {
+				std::fprintf(stderr, "sidus: invalid header\n");
+				return -1;
+			} else {
+				endian = Endian::BIG;
+			}
+		} else {
+			endian = Endian::LITTLE;
+		}
+	}
+	else if (endian == Endian::LITTLE) {
+		parse(&nmag, data + 0 + 4 + 4 + 4 + 4 + 4, true);
+		if (std::abs(nmag) > 10) {
+				std::fprintf(stderr, "sidus: invalid header, maybe try big-endian?\n");
+				return -1;
+		}
+	}
+	else if (endian == Endian::BIG) {
+		parse(&nmag, data + 0 + 4 + 4 + 4 + 4 + 4, false);
+		if (std::abs(nmag) > 10) {
+				std::fprintf(stderr, "sidus: invalid header, maybe try little-endian?\n");
+				return -1;
+		}
+	}
+
+	auto const littleEndian = endian == Endian::LITTLE;
+
 	std::int32_t starn;
 	parse(&starn, data + 0 + 4 + 4, littleEndian);
 	std::int32_t stnum;
 	parse(&stnum, data + 0 + 4 + 4 + 4, littleEndian);
 	std::int32_t mprop;
 	parse(&mprop, data + 0 + 4 + 4 + 4 + 4, littleEndian);
-	std::int32_t nmag;
-	parse(&nmag, data + 0 + 4 + 4 + 4 + 4 + 4, littleEndian);
 	std::int32_t nbent;
 	parse(&nbent, data + 0 + 4 + 4 + 4 + 4 + 4 + 4, littleEndian);
 
@@ -273,6 +306,7 @@ parseHeader(
 	header->numMagnitudes = std::abs(nmag);
 	header->numBytesPerStar = nbent;
 	header->epoch = isJ2000 ? Epoch::J2000 : Epoch::B1950;
+	header->littleEndian = littleEndian;
 
 	return 0;
 }
@@ -282,9 +316,9 @@ int
 parseStar(
     Star* star,
     Header const& header,
-    unsigned char const* const data,
-    bool const littleEndian)
+    unsigned char const* const data)
 {
+	auto const littleEndian = header.littleEndian;
 	auto cursor = 0;
 
 	double xno = 0.0;
@@ -530,9 +564,9 @@ main(int argc, char** argv)
 
 	auto apparentMagnitude = 0;
 	auto filterMagnitude = DBL_MAX;
-	Epoch epoch = Epoch::DONT_CARE;
+	Epoch epoch = Epoch::AUTO;
 	auto cformat = false;
-	auto littleEndian = true;
+	Endian endian = Endian::AUTO;
 	auto usefloat = false;
 	auto onlymeta = false;
 	enum class Sort { NO, MAG, RA } sort = Sort::NO;
@@ -550,6 +584,7 @@ main(int argc, char** argv)
 			switch (arg[1]) {
 			case 'a':
 				if (arg.size() < 3) {
+					std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
 					usage(stderr);
 					return -1;
 				}
@@ -557,23 +592,47 @@ main(int argc, char** argv)
 				continue;
 			case 'f':
 				if (arg.size() < 3) {
+					std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
 					usage(stderr);
 					return -1;
 				}
 				filterMagnitude = std::stod(arg.substr(2));
 				continue;
-			case 'b':
+			case 'B':
+				if (arg.size() < 3 || arg.substr(2) != "1950") {
+					std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
+					usage(stderr);
+					return -1;
+				}
 				epoch = Epoch::B1950;
-				break;
-			case 'j':
+				continue;
+			case 'J':
+				if (arg.size() < 3 || arg.substr(2) != "2000") {
+					std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
+					usage(stderr);
+					return -1;
+				}
 				epoch = Epoch::J2000;
-				break;
+				continue;
 			case 'c':
 				cformat = true;
 				break;
-			case 'e':
-				littleEndian = false;
-				break;
+			case 'l':
+				if (arg.size() < 3 || arg[2] != 'e') {
+					std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
+					usage(stderr);
+					return -1;
+				}
+				endian = Endian::LITTLE;
+				continue;
+			case 'b':
+				if (arg.size() < 3 || arg[2] != 'e') {
+					std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
+					usage(stderr);
+					return -1;
+				}
+				endian = Endian::BIG;
+				continue;
 			case 's':
 				usefloat = true;
 				break;
@@ -620,6 +679,7 @@ main(int argc, char** argv)
 				return -1;
 			}
 			if (arg.size() != 2) {
+				std::fprintf(stderr, "Invalid option '%s'\n", arg.c_str());
 				usage(stderr);
 				return -1;
 			}
@@ -657,7 +717,7 @@ main(int argc, char** argv)
 	}
 
 	Header header;
-	if (parseHeader(&header, data.get(), epoch, littleEndian) != 0) {
+	if (parseHeader(&header, data.get(), epoch, endian) != 0) {
 		return -1;
 	}
 
@@ -711,7 +771,7 @@ main(int argc, char** argv)
 	std::multimap<double, Star> map;
 	for (auto i = 0; i < header.numStars; ++i, cursor += header.numBytesPerStar) {
 		Star star;
-		if (parseStar(&star, header, data.get() + cursor, littleEndian) != 0) {
+		if (parseStar(&star, header, data.get() + cursor) != 0) {
 			continue;
 		}
 		if (star.magnitude > filterMagnitude) {
