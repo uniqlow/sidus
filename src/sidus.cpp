@@ -289,6 +289,20 @@ parseHeader(
 	std::int32_t nbent;
 	parse(&nbent, data + 0 + 4 + 4 + 4 + 4 + 4 + 4, littleEndian);
 
+	if (stnum > Header::INTEGER_STAR_ID) {
+		std::fprintf(stderr, "sidus: invalid STNUM, too large: %d\n", stnum);
+		return -1;
+	}
+
+	if (mprop < 0) {
+		std::fprintf(stderr, "sidus: invalid MPROP, negative: %d\n", mprop);
+		return -1;
+	}
+	if (mprop > Header::RADIAL_VELOCITY) {
+		std::fprintf(stderr, "sidus: invalid MPROP, too large: %d\n", mprop);
+		return -1;
+	}
+
 	auto const isJ2000 = starn < 0 || nmag < 0;
 	if (epoch == Epoch::J2000 && !isJ2000) {
 		std::fprintf(stderr, "sidus: expected J2000 epoch but found B1950 epoch\n");
